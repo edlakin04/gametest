@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CITY OF ASH | FPS ZOMBIE SURVIVAL</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --accent: #d32f2f;
+            --bg: #0a0a0a;
+            --panel: rgba(20, 20, 20, 0.9);
+            --font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: var(--font); color: white; user-select: none; }
+        canvas { display: block; }
+
+        /* REGION: UI (MENUS + HUD) */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        .menu-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: all; transition: opacity 0.3s; }
+        .hidden { display: none !important; opacity: 0; }
+        
+        h1 { font-size: 4rem; letter-spacing: 10px; margin-bottom: 2rem; text-transform: uppercase; color: var(--accent); text-shadow: 0 0 20px rgba(211, 47, 47, 0.5); }
+        .btn { background: transparent; border: 1px solid white; color: white; padding: 1rem 3rem; font-size: 1.2rem; cursor: pointer; transition: 0.2s; margin: 0.5rem; width: 250px; text-transform: uppercase; }
+        .btn:hover { background: white; color: black; box-shadow: 0 0 15px white; }
+        
+        .settings-panel { background: var(--panel); padding: 2rem; border: 1px solid #333; width: 400px; }
+        .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        
+        #hud { position: absolute; inset: 0; pointer-events: none; padding: 2rem; display: flex; flex-direction: column; justify-content: space-between; }
+        .hud-top { display: flex; justify-content: space-between; font-size: 1.5rem; }
+        .hud-bottom { display: flex; justify-content: space-between; align-items: flex-end; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.5); border-radius: 50%; transform: translate(-50%, -50%); }
+        #crosshair::after { content: ''; position: absolute; top: 50%; left: 50%; width: 2px; height: 2px; background: white; transform: translate(-50%, -50%); }
+        
+        .bar-container { width: 300px; height: 10px; background: #222; margin-top: 5px; border: 1px solid #444; }
+        #health-fill { height: 100%; width: 100%; background: var(--accent); transition: width 0.3s; }
+        #interact-prompt { position: absolute; bottom: 30%; left: 50%; transform: translateX(-50%); font-size: 1.2rem; color: yellow; text-shadow: 1px 1px 2px black; }
+        
+        #damage-flash { position: absolute; inset: 0; background: radial-gradient(circle, transparent 40%, rgba(211, 47, 47, 0.4) 100%); opacity: 0; pointer-events: none; transition: opacity 0.1s; }
+        #vignette { position: absolute; inset: 0; background: radial-gradient(circle, transparent 50%, rgba(0,0,0,0.8) 100%); pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="vignette"></div>
+        <div id="damage-flash"></div>
+
+        <div id="main-menu" class="menu-overlay">
+            <h1>CITY OF ASH</h1>
+            <button class="btn" onclick="game.start()">Enter City</button>
+            <button class="btn" onclick="game.showSettings()">Settings</button>
+            <button class="btn" onclick="game.showCredits()">Credits</button>
+        </div>
+
+        <div id="pause-menu" class="menu-overlay hidden">
+            <h1>PAUSED</h1>
+            <button class="btn" onclick="game.resume()">Resume</button>
+            <button class="btn" onclick="game.showSettings()">Settings</button>
+            <button class="btn" onclick="game.quit()">Main Menu</button>
+        </div>
+
+        <div id="settings-menu" class="menu-overlay hidden">
+            <div class="settings-panel">
+                <h2>SETTINGS</h2>
+                <div class="setting-row">
+                    <label>Sensitivity</label>
+                    <input type="range" id="sens-slider" min="1" max="10" value="5">
+                </div>
+                <div class="setting-row">
+                    <label>Graphics</label>
+                    <select id="graphics-preset">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="game.backFromSettings()" style="width: 100%;">Back</button>
+            </div>
+        </div>
+
+        <div id="credits-menu" class="menu-overlay hidden">
+            <div class="settings-panel" style="text-align: center;">
+                <h2>CREDITS</h2>
+                <p>Developed by Gemini 3 Flash</p>
+                <p>Procedural Tech & Audio Synthesis</p>
+                <button class="btn" onclick="game.backToMain()" style="width: 100%;">Back</button>
+            </div>
+        </div>
+
+        <div id="hud" class="hidden">
+            <div class="hud-top">
+                <div id="score-display">POINTS: 0</div>
+                <div id="wave-display">WAVE 1</div>
+            </div>
+            <div id="crosshair"></div>
+            <div id="interact-prompt" class="hidden">[E] BUY UPGRADE (500 pts)</div>
+            <div class="hud-bottom">
+                <div>
+                    <div id="weapon-name">PISTOL</div>
+                    <div id="ammo-display">12 / 48</div>
+                </div>
+                <div>
+                    HEALTH
+                    <div class="bar-container"><div id="health-fill"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * REGION: CONFIG & GLOBALS
+ */
+const CONFIG = {
+    moveSpeed: 0.12,
+    sprintMult: 1.6,
+    jumpForce: 0.15,
+    gravity: 0.006,
+    zombieSpeed: 0.05,
+    zombieRegenDelay: 4000,
+    zombieRegenRate: 0.05,
+    playerHealth: 100,
+    mapWidth: 100,
+    mapDepth: 100
+};
+
+/**
+ * REGION: AUDIO (WEBAUDIO)
+ */
+class AudioSystem {
+    constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.masterVolume = 0.5;
+    }
+
+    playShot(type = 'pistol') {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const noise = this.ctx.createBufferSource();
+        
+        // Simple procedural gunshot noise
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(type === 'pistol' ? 1000 : 500, this.ctx.currentTime);
+        
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        gain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+        
+        noise.start();
+        noise.stop(this.ctx.currentTime + 0.1);
+    }
+
+    playClick() {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.05);
+    }
+}
+const audio = new AudioSystem();
+
+/**
+ * REGION: WORLD GENERATION (CITY)
+ */
+function createProceduralTexture(size, color1, color2, noiseScale = 0.5) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color1;
+    ctx.fillRect(0, 0, size, size);
+    
+    for (let i = 0; i < size * size * noiseScale; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const s = Math.random() * 2;
+        ctx.fillStyle = Math.random() > 0.5 ? color2 : 'rgba(0,0,0,0.2)';
+        ctx.fillRect(x, y, s, s);
+    }
+    
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+}
+
+class City {
+    constructor(scene) {
+        this.scene = scene;
+        this.collidables = [];
+        this.shops = [];
+        this.init();
+    }
+
+    init() {
+        // Ground - Asphalt
+        const groundTex = createProceduralTexture(512, '#222', '#111', 0.8);
+        groundTex.repeat.set(20, 20);
+        const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.9 });
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        this.scene.add(ground);
+
+        // Buildings (Procedural blocks)
+        const concreteTex = createProceduralTexture(512, '#444', '#333', 0.4);
+        const buildingMat = new THREE.MeshStandardMaterial({ map: concreteTex, roughness: 0.7 });
+
+        for (let i = 0; i < 15; i++) {
+            const w = 10 + Math.random() * 10;
+            const h = 20 + Math.random() * 30;
+            const d = 10 + Math.random() * 10;
+            const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), buildingMat);
+            
+            // Layout buildings along "streets"
+            const side = Math.random() > 0.5 ? 1 : -1;
+            b.position.set(side * (25 + Math.random() * 20), h / 2, (i - 7) * 25);
+            b.castShadow = true;
+            b.receiveShadow = true;
+            this.scene.add(b);
+            this.collidables.push(b);
+            
+            // Windows (Simplified)
+            this.addWindows(b, w, h, d);
+        }
+
+        // Shop Posts
+        this.createShop(10, 0, 10, "SMG", 1000);
+        this.createShop(-15, 0, -20, "RIFLE", 2500);
+    }
+
+    addWindows(building, w, h, d) {
+        const winGeo = new THREE.PlaneGeometry(1, 1.5);
+        const winMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x050505 });
+        for(let y = 2; y < h - 2; y += 4) {
+            for(let x = -w/2 + 2; x < w/2 - 2; x += 3) {
+                const win = new THREE.Mesh(winGeo, winMat);
+                win.position.set(x, y - h/2, d/2 + 0.01);
+                building.add(win);
+            }
+        }
+    }
+
+    createShop(x, y, z, item, price) {
+        const group = new THREE.Group();
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2, 0.5), new THREE.MeshStandardMaterial({color: 0x555555}));
+        post.position.y = 1;
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.5, 0.2), new THREE.MeshStandardMaterial({color: 0x222222}));
+        head.position.y = 2;
+        group.add(post, head);
+        group.position.set(x, y, z);
+        this.scene.add(group);
+        this.shops.push({ pos: new THREE.Vector3(x,y,z), item, price, active: true });
+    }
+}
+
+/**
+ * REGION: PLAYER CONTROLLER
+ */
+class Player {
+    constructor(scene, camera) {
+        this.camera = camera;
+        this.scene = scene;
+        this.health = CONFIG.playerHealth;
+        this.points = 0;
+        this.velocity = new THREE.Vector3();
+        this.direction = new THREE.Vector3();
+        this.moveForward = false;
+        this.moveBackward = false;
+        this.moveLeft = false;
+        this.moveRight = false;
+        this.canJump = false;
+        this.isSprinting = false;
+        
+        this.pitch = new THREE.Object3D();
+        this.yaw = new THREE.Object3D();
+        this.yaw.add(this.pitch);
+        this.pitch.add(camera);
+        scene.add(this.yaw);
+        this.yaw.position.y = 1.7;
+
+        this.weaponGroup = new THREE.Group();
+        this.pitch.add(this.weaponGroup);
+        this.setupWeapon();
+
+        this.raycaster = new THREE.Raycaster();
+        this.bindEvents();
+    }
+
+    setupWeapon() {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.5), new THREE.MeshStandardMaterial({color: 0x222222}));
+        const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.08), new THREE.MeshStandardMaterial({color: 0x111111}));
+        grip.position.set(0, -0.15, 0.1);
+        this.weaponGroup.add(body, grip);
+        this.weaponGroup.position.set(0.3, -0.25, -0.4);
+    }
+
+    bindEvents() {
+        const onKeyDown = (e) => {
+            switch(e.code) {
+                case 'KeyW': this.moveForward = true; break;
+                case 'KeyS': this.moveBackward = true; break;
+                case 'KeyA': this.moveLeft = true; break;
+                case 'KeyD': this.moveRight = true; break;
+                case 'ShiftLeft': this.isSprinting = true; break;
+                case 'Space': if(this.canJump) this.velocity.y += CONFIG.jumpForce; this.canJump = false; break;
+                case 'KeyE': this.interact(); break;
+            }
+        };
+        const onKeyUp = (e) => {
+            switch(e.code) {
+                case 'KeyW': this.moveForward = false; break;
+                case 'KeyS': this.moveBackward = false; break;
+                case 'KeyA': this.moveLeft = false; break;
+                case 'KeyD': this.moveRight = false; break;
+                case 'ShiftLeft': this.isSprinting = false; break;
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement) {
+                this.yaw.rotation.y -= e.movementX * 0.002;
+                this.pitch.rotation.x -= e.movementY * 0.002;
+                this.pitch.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.pitch.rotation.x));
+            }
+        });
+        document.addEventListener('mousedown', () => {
+            if (document.pointerLockElement) this.shoot();
+        });
+    }
+
+    shoot() {
+        audio.playShot();
+        // Visual Kick
+        this.weaponGroup.position.z += 0.05;
+        
+        // Raycast for hits
+        this.raycaster.setFromCamera(new THREE.Vector2(0,0), this.camera);
+        const intersects = this.raycaster.intersectObjects(game.zombies.map(z => z.mesh), true);
+        if(intersects.length > 0) {
+            const hitObj = intersects[0].object;
+            const zombie = game.zombies.find(z => z.mesh === hitObj || z.mesh.children.includes(hitObj));
+            if(zombie) zombie.takeDamage(25);
+        }
+    }
+
+    interact() {
+        game.city.shops.forEach(shop => {
+            if(this.yaw.position.distanceTo(shop.pos) < 3) {
+                if(this.points >= shop.price) {
+                    this.points -= shop.price;
+                    document.getElementById('weapon-name').innerText = shop.item;
+                    audio.playClick();
+                }
+            }
+        });
+    }
+
+    update(delta, collidables) {
+        const speed = this.isSprinting ? CONFIG.moveSpeed * CONFIG.sprintMult : CONFIG.moveSpeed;
+        
+        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+        this.direction.normalize();
+
+        if (this.moveForward || this.moveBackward) this.velocity.z -= this.direction.z * speed * delta;
+        if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * speed * delta;
+
+        this.velocity.y -= CONFIG.gravity * delta;
+
+        // Simple collision / Y constraint
+        this.yaw.translateX(-this.velocity.x);
+        this.yaw.translateZ(-this.velocity.z);
+        this.yaw.position.y += this.velocity.y;
+
+        if (this.yaw.position.y < 1.7) {
+            this.velocity.y = 0;
+            this.yaw.position.y = 1.7;
+            this.canJump = true;
+        }
+
+        // Apply friction
+        this.velocity.x *= 0.85;
+        this.velocity.z *= 0.85;
+
+        // Weapon Sway / Bob
+        const time = performance.now() * 0.005;
+        if(Math.abs(this.velocity.x) + Math.abs(this.velocity.z) > 0.01) {
+            this.weaponGroup.position.y = -0.25 + Math.sin(time * 2) * 0.01;
+            this.weaponGroup.position.x = 0.3 + Math.cos(time) * 0.005;
+        }
+        this.weaponGroup.position.z += ( -0.4 - this.weaponGroup.position.z ) * 0.1;
+
+        // Update HUD
+        document.getElementById('health-fill').style.width = this.health + '%';
+        document.getElementById('score-display').innerText = 'POINTS: ' + this.points;
+        
+        // Check shop proximity
+        let nearShop = false;
+        game.city.shops.forEach(s => {
+            if(this.yaw.position.distanceTo(s.pos) < 3) {
+                nearShop = true;
+                document.getElementById('interact-prompt').innerText = `[E] BUY ${s.item} (${s.price} pts)`;
+            }
+        });
+        document.getElementById('interact-prompt').classList.toggle('hidden', !nearShop);
+
+        if(this.health <= 0) game.gameOver();
+    }
+}
+
+/**
+ * REGION: ZOMBIE SYSTEM
+ */
+class Zombie {
+    constructor(scene, player, pos) {
+        this.scene = scene;
+        this.player = player;
+        this.health = 100;
+        this.lastDamageTime = 0;
+        this.mesh = this.createMesh();
+        this.mesh.position.copy(pos);
+        scene.add(this.mesh);
+        this.state = 'idle'; // idle, chase, attack
+    }
+
+    createMesh() {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({color: 0x445544, roughness: 1});
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), mat);
+        head.position.y = 1.6;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1, 0.3), mat);
+        body.position.y = 0.9;
+        group.add(head, body);
+        group.castShadow = true;
+        return group;
+    }
+
+    takeDamage(amt) {
+        this.health -= amt;
+        this.lastDamageTime = Date.now();
+        if(this.health <= 0) this.die();
+    }
+
+    die() {
+        this.scene.remove(this.mesh);
+        this.dead = true;
+        this.player.points += 100;
+    }
+
+    update(delta) {
+        if(this.dead) return;
+
+        const dist = this.mesh.position.distanceTo(this.player.yaw.position);
+        
+        // Aggro logic
+        if(dist < 20) {
+            this.mesh.lookAt(this.player.yaw.position.x, 0, this.player.yaw.position.z);
+            const dir = new THREE.Vector3().subVectors(this.player.yaw.position, this.mesh.position).normalize();
+            
+            if(dist > 1.5) {
+                this.mesh.position.add(dir.multiplyScalar(CONFIG.zombieSpeed * delta));
+                // Shamble bob
+                this.mesh.position.y = Math.abs(Math.sin(performance.now() * 0.01)) * 0.1;
+            } else {
+                // Attack
+                if(Math.random() < 0.02) {
+                    this.player.health -= 5;
+                    document.getElementById('damage-flash').style.opacity = 1;
+                    setTimeout(() => document.getElementById('damage-flash').style.opacity = 0, 100);
+                }
+            }
+        }
+
+        // Regen health
+        if(Date.now() - this.lastDamageTime > CONFIG.zombieRegenDelay && this.health < 100) {
+            this.health += CONFIG.zombieRegenRate * delta;
+        }
+    }
+}
+
+/**
+ * REGION: GAME ENGINE / LOOP
+ */
+class Game {
+    constructor() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x050505);
+        this.scene.fog = new THREE.FogExp2(0x050505, 0.04);
+
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ReinhardToneMapping;
+        document.body.appendChild(this.renderer.domElement);
+
+        this.setupLights();
+        
+        this.city = new City(this.scene);
+        this.player = new Player(this.scene, this.camera);
+        this.zombies = [];
+        this.isPaused = true;
+        this.clock = new THREE.Clock();
+
+        this.spawnZombies(10);
+        this.animate();
+
+        window.addEventListener('resize', () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    setupLights() {
+        const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+        sun.position.set(50, 100, 50);
+        sun.castShadow = true;
+        sun.shadow.mapSize.width = 2048;
+        sun.shadow.mapSize.height = 2048;
+        this.scene.add(sun);
+        this.scene.add(new THREE.AmbientLight(0x404040, 0.5));
+    }
+
+    spawnZombies(count) {
+        for(let i=0; i<count; i++) {
+            const pos = new THREE.Vector3(
+                (Math.random()-0.5) * 80,
+                0,
+                (Math.random()-0.5) * 80
+            );
+            if(pos.length() < 10) pos.addScalar(15);
+            this.zombies.push(new Zombie(this.scene, this.player, pos));
+        }
+    }
+
+    start() {
+        document.body.requestPointerLock();
+        this.isPaused = false;
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('hud').classList.remove('hidden');
+        audio.ctx.resume();
+    }
+
+    resume() {
+        document.body.requestPointerLock();
+        this.isPaused = false;
+        document.getElementById('pause-menu').classList.add('hidden');
+    }
+
+    showSettings() {
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('pause-menu').classList.add('hidden');
+        document.getElementById('settings-menu').classList.remove('hidden');
+    }
+
+    backFromSettings() {
+        document.getElementById('settings-menu').classList.add('hidden');
+        if(this.player.health <= 0 || !this.player.yaw.position.x) {
+            document.getElementById('main-menu').classList.remove('hidden');
+        } else {
+            document.getElementById('pause-menu').classList.remove('hidden');
+        }
+    }
+
+    showCredits() {
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('credits-menu').classList.remove('hidden');
+    }
+
+    backToMain() {
+        document.getElementById('credits-menu').classList.add('hidden');
+        document.getElementById('main-menu').classList.remove('hidden');
+    }
+
+    gameOver() {
+        this.isPaused = true;
+        document.exitPointerLock();
+        alert("YOU DIED. Final Score: " + this.player.points);
+        location.reload();
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        
+        if (!this.isPaused) {
+            const delta = this.clock.getDelta() * 60;
+            this.player.update(delta, this.city.collidables);
+            this.zombies.forEach(z => z.update(delta));
+            this.zombies = this.zombies.filter(z => !z.dead);
+            
+            if(this.zombies.length < 5) this.spawnZombies(5);
+        } else {
+            // Subtle menu camera drift
+            this.player.yaw.rotation.y += 0.001;
+        }
+
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+// Handle Pointer Lock State
+document.addEventListener('pointerlockchange', () => {
+    if (!document.pointerLockElement && !game.isPaused) {
+        game.isPaused = true;
+        document.getElementById('pause-menu').classList.remove('hidden');
+    }
+});
+
+const game = new Game();
+</script>
+</body>
+</html>
